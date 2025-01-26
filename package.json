@@ -1,0 +1,29 @@
+{
+  "name": "practica04_230493_sessioneshttp",
+  "version": "1.0.0",
+  "description": "Practica donde nos ayuda a abrir sesiones con un identificador unico llamado uuid serrar y abrir cesion ",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "Dul220509"
+  },
+  "author": "Dulce Yadira Salvador Antonio 230493",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "moment-timezone": "^0.5.46",
+    "mongoos": "^0.0.1-security",
+    "mongoose": "^8.9.5",
+    "mongos": "^0.0.0",
+    "node": "^22.13.0",
+    "nodemon": "^3.1.9",
+    "uuid": "^11.0.5"
+  }
+}
