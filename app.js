@@ -7,17 +7,20 @@ import { v4 as uuidv4 } from "uuid";
 import { request, response } from "express";
 import os from "os";
 
+//se cream los...
 const app= express();
 const PORT=3000;
-const sesion={};
-
-//midleware para manejar datos json
-app.use(express.json());
-
-//Midleware para manejar datos codificados en URL
-app.use(express.urlencoded({extended:true}));
+const sesion={};// Almacenará las sesiones activas
+const sessionId = uuidv4();// Genera un ID único para la sesión
+const now = new Date();// Obtiene la fecha y hora actual
+const xicoTime = new Date(now.getTime() - 6 * 60 * 60 * 1000); // Restamos 6 horas
 
 
+//MIDLEWARES
+app.use(express.json());//midleware para manejar datos json
+app.use(express.urlencoded({extended:true}));//Midleware para manejar datos codificados en URL
+
+//ENDPOINT
 //crear endpoint para dar la bienbenida
 app.get('/',(request,response)=>{
     return response.status(200).json({message: "Bienvenido al API de sesion de Controles de Sesiones",
@@ -45,28 +48,49 @@ const getClientIp = (response) =>{
 }
 
 //login endpoint
-app.post("/login", (request,response)=>{
-    const {email,nickname,macAdress} = request.body;
-    if(!email||!nickname ||!macAdress){
-        return response.status(400).json({message:"Missing required fields"});
+// Endpoint para manejar el login
+app.post("/login", (request, response) => {
+    const { email, nickname, macAdress } = request.body;// Extrae las variables necesarias del cuerpo de la solicitud
+    if (!email || !nickname || !macAdress) {// Verifica que los campos requeridos estén presentes
+        return response.status(400).json({ message: "Missing required fields" });
     }
+    // Formatea la fecha actual para mayor legibilidad
+    const formattedDate = new Intl.DateTimeFormat("es-ES", {
+        dateStyle: "full",
+        timeStyle: "medium",
+        timeZone: "UTC", // Puedes cambiar la zona horaria si es necesario
+    }).format(xicoTime);
 
-    const sessionId = uuidv4();
-    const now = new Date();
+    // Guarda la información de la sesión en el objeto "sesion"
+    sesion[sessionId] = {
+        sessionId, // ID único de la sesión
+        email, // Correo electrónico del usuario
+        nickname, // Apodo del usuario
+        macAdress, // Dirección MAC del usuario
+        ip: getServerNetworkInfo, // IP del cliente que realiza la solicitud
+        dateCreated: formattedDate, // Fecha de creación formateada
+        lastAccessed: formattedDate, // Fecha del último acceso formateada
+    };
 
-    sesion[sessionId]={
-        sessionId,
-        email,
-        nickname,
-        macAdress,
-        ip: getServerNetworkInfo,
-        dateCreated: now,
-        lastAccessed:now,
-    }
+    // Responde con un mensaje de éxito y el ID de la sesión
     response.status(200).json({
-        message:"Se ha logueado de manera exitosa",
+        message: "Se ha logueado de manera exitosa",
         sessionId,
+    });
+
+    //status
+    app.get("/status", (request,response)=>{
+        const sessionId = request.query.sessionId;
+        if(!sessionId || !sesion[sessionId]){
+            response.status(404).json({message:"No hay sesion activa"
+            });
+        }
+        response.status(200).json({
+            message:"Sesion activa",
+            session:sesion[sessionId]
+        })
     })
+
     //logout endpoint
     app.post ("/logout",(request,response)=>{
         const {sessionId}=request.body;
@@ -78,7 +102,7 @@ app.post("/login", (request,response)=>{
         delete sesion[sessionId];
         request.session.destroy((err)=>{
             if(err){
-                return response.status(500).send('Error al cerrar laa sesion');
+                return response.status(500).send('Error al cerrar la sesion');
             }
         })
         response.status(200).json({message:"Logout successeful"})
@@ -93,24 +117,13 @@ app.post("/login", (request,response)=>{
         }
         if (email)sesion[sessionId].email=email
         if (nickname)sesion[sessionId].nickname=nickname;
-        sesion[sessionId].lastAccess = new Date()
+        sesion[sessionId].lastAccess = formattedDate;
         response.status(200).json({
             message:"La sesion ha sido actualizada",
             session: sesion[sessionId]
         })
     })
-    //status
-    app.get("/status", (request,response)=>{
-        const sessionId = request.query.sessionId;
-        if(!sessionId || !sesion[sessionId]){
-            response.status(404).json({message:"No hay sesion actuva"
-            });
-        }
-        response.status(200).json({
-            message:"Sesion activa",
-            session:sesion[sessionId]
-        })
-    })
+    
 })
 
 //funcion de utilidad que nospermite acceder a la informacion de la interfaz de l red (la ip)
