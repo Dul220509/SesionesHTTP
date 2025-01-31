@@ -7,25 +7,19 @@ import { v4 as uuidv4 } from "uuid";
 import { request, response } from "express";
 import os from "os";
 
-//se cream los...
+//inicializo la aplicacción
 const app= express();
 const PORT=3000;
-const sesion={};// Almacenará las sesiones activas
+const sesiones = {};//guarda todas las sesiones
+
+//const sesion={};// Almacenará las sesiones activas
 const sessionId = uuidv4();// Genera un ID único para la sesión
 const now = new Date();// Obtiene la fecha y hora actual
 const xicoTime = new Date(now.getTime() - 6 * 60 * 60 * 1000); // Restamos 6 horas
 
-
 //MIDLEWARES
 app.use(express.json());//midleware para manejar datos json
 app.use(express.urlencoded({extended:true}));//Midleware para manejar datos codificados en URL
-
-//ENDPOINT
-//crear endpoint para dar la bienbenida
-app.get('/',(request,response)=>{
-    return response.status(200).json({message: "Bienvenido al API de sesion de Controles de Sesiones",
-author: "Dulce Yadira Salvador Antonio"})
-})
 
 //configurar la sesion
 app.use(
@@ -33,27 +27,68 @@ app.use(
         secret:'P4-DYSA#Bee-SesionesHTTP',
         resave:false,
         saveUninitialized:true,
-        cookie:{ maxAge: 24*60*1000}
+        cookie:{ maxAge: 15 * 60 * 1000 }//tiempo de la expiracion de la sesion 15 minutos
     })
  );
+//crear endpoint para dar la bienbenida
+app.get('/',(request,response)=>{
+    return response.status(200).json({
+        message: "Bienvenido al API de Controles de Sesiones",
+        author: "Dulce Yadira Salvador Antonio"})
+});
 
 //funcion de utilidad que nos permite accerder a la informacion 
-const getClientIp = (response) =>{
+const getClientIp = (request) =>{
     return(
         request.header["x-forwarded-for"] ||
         request.connection.remoteAddress ||
         request.socket.remoteAddress ||
         request.connection.socket?.remoteAddress
-    )
-}
+    );
+};
 
-//login endpoint
-// Endpoint para manejar el login
+ // Función para obtener la IP del servidor
+ const getServerIP = () => {
+     const networkInterfaces = os.networkInterfaces();
+     for (const iface of Object.values(networkInterfaces).flat()) {
+         if (iface.family === "IPv4" && !iface.internal) {
+             return iface.address;
+         }
+     }
+     return "IP no disponible";
+ };
+ // Función para obtener la dirección MAC del servidor
+const getServerMacAddress = () => {
+    const networkInterfaces = os.networkInterfaces();
+    for (const interfaceName in networkInterfaces) {
+        const iface = networkInterfaces[interfaceName];
+        for (const details of iface) {
+            if (details.mac && details.mac !== "00:00:00:00:00:00") {
+                return details.mac; // Devuelve la primera MAC válida
+            }
+        }
+    }
+    return "MAC no disponible";
+};
+// Función para eliminar sesiones inactivas
+const limpiarSesionesInactivas = () => {
+    const ahora = Date.now();
+    for (const sessionId in sesiones) {
+        const { lastAccessed } = sesiones[sessionId];
+        if (ahora - lastAccessed > 15 * 60 * 1000) { // Si han pasado 15 min sin actividad
+            delete sesiones[sessionId];
+        }
+    }
+};
+setInterval(limpiarSesionesInactivas, 60 * 1000); // Revisa cada minuto
+
+//Endpoint para iniciar sesion
 app.post("/login", (request, response) => {
-    const { email, nickname, macAdress } = request.body;// Extrae las variables necesarias del cuerpo de la solicitud
-    if (!email || !nickname || !macAdress) {// Verifica que los campos requeridos estén presentes
+    const { name,email, nickname, macAdress } = request.body;// Extrae las variables necesarias del cuerpo de la solicitud
+    if (!name|| !email || !nickname || !macAdress) {// Verifica que los campos requeridos estén presentes
         return response.status(400).json({ message: "Missing required fields" });
     }
+
     // Formatea la fecha actual para mayor legibilidad
     const formattedDate = new Intl.DateTimeFormat("es-ES", {
         dateStyle: "full",
@@ -61,14 +96,18 @@ app.post("/login", (request, response) => {
         timeZone: "UTC", // Puedes cambiar la zona horaria si es necesario
     }).format(xicoTime);
 
+    const sessionId = uuidv4(); // Generar un nuevo ID de sesión
     // Guarda la información de la sesión en el objeto "sesion"
-    sesion[sessionId] = {
+    sesiones[sessionId] = {
         sessionId, // ID único de la sesión
+        name,
         email, // Correo electrónico del usuario
         nickname, // Apodo del usuario
         macAdress, // Dirección MAC del usuario
-        ip: getServerNetworkInfo, // IP del cliente que realiza la solicitud
-        dateCreated: formattedDate, // Fecha de creación formateada
+        ipClient: request.ip, // IP del cliente
+        ipServer: getServerIP(), // IP del servidor
+        macServer: getServerMacAddress(), // MAC del servidor // IP del cliente que realiza la solicitud
+        dateCreated: formattedDate, // Guardamos el timestamp
         lastAccessed: formattedDate, // Fecha del último acceso formateada
     };
 
@@ -79,27 +118,36 @@ app.post("/login", (request, response) => {
     });
 
     //status
-    app.get("/status", (request,response)=>{
-        const sessionId = request.query.sessionId;
-        if(!sessionId || !sesion[sessionId]){
-            response.status(404).json({message:"No hay sesion activa"
-            });
+    app.get("/status", (request, response) => {
+        const  sessionId  = request.query.sessionId;
+        if (!sessionId || !sesiones[sessionId]) {
+            return response.status(404).json({ message: "No hay sesión activa" });
         }
+    
+        const sesion = sesiones[sessionId];
+        const ahora = Date.now();
+        const tiempoActivo = moment.duration(ahora - sesion.dateCreated).humanize();
+        const tiempoInactividad = moment.duration(ahora - sesion.lastAccessed).humanize();
+    
         response.status(200).json({
-            message:"Sesion activa",
-            session:sesion[sessionId]
-        })
-    })
+            message: "Sesión activa",
+            session: {
+                ...sesion,
+                tiempoActivo,
+                tiempoInactividad,
+            }
+        });
+    });
 
     //logout endpoint
-    app.post ("/logout",(request,response)=>{
+    app.post("/logout",(request,response)=>{
         const {sessionId}=request.body;
-        if(!sessionId || !sesion[sessionId]){
-            return response.status(404).json({
-                message:"No se ha encontrado una sesion activa"
-            });
+        if(!sessionId || !sesiones[sessionId]){
+            return response.status(404).json({message:"No se ha encontrado una sesion activa"});
         }
-        delete sesion[sessionId];
+
+        delete sesiones[sessionId];
+
         request.session.destroy((err)=>{
             if(err){
                 return response.status(500).send('Error al cerrar la sesion');
@@ -108,37 +156,44 @@ app.post("/login", (request, response) => {
         response.status(200).json({message:"Logout successeful"})
     })
 
-    //actualizar la sesion
-
+    //endpoint actualizar la sesion
     app.put("/update",(request,response)=>{
         const {sessionId,email,nickname}= request.body;
-        if(!sessionId || !sesion[sessionId]){
+        if (!sessionId || !sesiones[sessionId]){
             return response.status(404).json({message:"no existe una sesion activa"});
         }
-        if (email)sesion[sessionId].email=email
-        if (nickname)sesion[sessionId].nickname=nickname;
-        sesion[sessionId].lastAccess = formattedDate;
+
+        if (email)sesiones[sessionId].email=email
+        if (nickname)sesiones[sessionId].nickname=nickname;
+        sesiones[sessionId];
+
         response.status(200).json({
             message:"La sesion ha sido actualizada",
-            session: sesion[sessionId]
-        })
-    })
-    
-})
+            session: sesiones[sessionId]
+        });
+    });
+});
 
-//funcion de utilidad que nospermite acceder a la informacion de la interfaz de l red (la ip)
-
-const getServerNetworkInfo =()=>{
-    const interfaces = os.networkInterfaces();
-    for(const name in interfaces){
-        for (const iface of interfaces[name]){
-            if(iface.family === 'IPv4' && !iface.internal){
-                return{serverIp: iface.address,serverMac:iface.mac};
-            }
-        }
+// Endpoint para obtener la lista de todas las sesiones activas
+app.get("/sessions", (request, response) => {
+    // Verifica si hay sesiones activas
+    if (Object.keys(sesiones).length === 0) {
+        return response.status(404).json({ message: "No hay sesiones activas" });
     }
-}
+    const ahora = Date.now();
+    const sesionesFormateadas = Object.values(sesiones).map(sesion => ({
+        ...sesiones,
+        tiempoActivo: moment.duration(ahora - sesion.dateCreated).humanize(),
+        tiempoInactividad: moment.duration(ahora - sesion.lastAccessed).humanize()
+    }));
+    
+    response.status(200).json({
+        message: "Lista de sesiones activas",
+        sessions: sesionesFormateadas
+    });
+});
 
-app.listen(3000,()=>{
-    console.log(`Servidor corriendo en el http://localhost:${PORT}`);
-})
+// Iniciar servidor
+app.listen(PORT, () => {
+    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+});
