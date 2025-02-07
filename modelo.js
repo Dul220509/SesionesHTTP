@@ -1,22 +1,22 @@
-import mongoose from "mongoose";
-
+//aqui va el modelo de los datos de sesiones
+import {model,Schema} from "mongoose";
 // Definir el esquema de la sesión
-const sessionSchema = new mongoose.Schema({
-    sessionId: String,
+const sesionesSchema = new Schema({
+    sessionId:{
+        require:true,
+        unique:true,
+        type:Number
+    },
     email: String,
-    fullName: String,
     nickname: String,
-    macAddress: String,
-    clientIp: String,
-    serverIp: String,
+    ipClient: String,
+    ipServer: String,
+    macServer: String,
     serverMac: String,
-    createdAt: Date,
-    lastAccessedAt: Date,
-    duration: Number,
-    inactivityTime: Number
+    dateCreated: Date,
+    lastAccessed: Date,
+},{
+    versionKey:false,
+    timestamps:true
 });
-
-// Crear el modelo de la sesión basado en el esquema
-const ControlSession = mongoose.model('ControlSessiones', sessionSchema, 'ControlSessiones'); // Aseguramos que coincida con la colección 'ControlSessiones'
-
-export default ControlSession;
+export default model ('sesiones',sesionesSchema);

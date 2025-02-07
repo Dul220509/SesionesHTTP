@@ -6,13 +6,16 @@ import moment from "moment";
 import { v4 as uuidv4 } from "uuid";
 import os from "os";
 import mongoose from "mongoose";
+//import mongoose,{mongo} from "mongoose";
 
 //inicializo la aplicacción
 const app= express();
 const PORT=3000;
 const sesiones = {};//guarda todas las sesiones
 
-//Middleware
+//MIDLEWARES
+app.use(express.json());//midleware para manejar datos json
+app.use(express.urlencoded({extended:true}));//Midleware para manejar datos codificados en URL
 app.use(
     session({
         secret:'P4-DYSA#Bee-SesionesHTTP',
@@ -25,13 +28,17 @@ app.use(
 const sessionId = uuidv4();// Genera un ID único para la sesión
 const now = new Date();// Obtiene la fecha y hora actual
 const xicoTime = new Date(now.getTime() - 6 * 60 * 60 * 1000); // Restamos 6 horas
+
+// Formatea la fecha actual para mayor legibilidad
+const formattedDate= new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "full",
+    timeStyle: "medium",
+    timeZone: "UTC", // Puedes cambiar la zona horaria si es necesario
+}).format(xicoTime);
+
 //console.log("la hora es:",xicoTime.toString());
-//MIDLEWARES
-app.use(express.json());//midleware para manejar datos json
-app.use(express.urlencoded({extended:true}));//Midleware para manejar datos codificados en URL
 
-
-//funcion de utilidad que nos permite accerder a la informacion 
+//funcion de utilidad que nos permite accerder a la informacion no se usa aun 
 const getClientIpp = (request) =>{
     return(
         request.header["x-forwarded-for"] ||
@@ -41,8 +48,10 @@ const getClientIpp = (request) =>{
     );
 };
 
- // Función para obtener la IP del servidor
+ // Función para obtener la IP del cliente
  const getClientIp = (request) => request.ip.replace(/^.*:/, '');
+ 
+ // Función para obtener la IP del servidor
  const getServerIP = () => {
      const interfaces = os.networkInterfaces();
      for (const iface of Object.values(interfaces).flat()) {
@@ -52,6 +61,7 @@ const getClientIpp = (request) =>{
      }
      return "IP no disponible";
  };
+
  // Función para obtener la dirección MAC del servidor
 const getServerMacAddress = () => {
     const networkInterfaces = os.networkInterfaces();
@@ -65,12 +75,13 @@ const getServerMacAddress = () => {
     }
     return "MAC no disponible";
 };
+
 // Función para eliminar sesiones inactivas
 const limpiarSesionesInactivas = () => {
     const ahora = Date.now();
     for (const sessionId in sesiones) {
         const { lastAccessed } = sesiones[sessionId];
-        if (ahora - lastAccessed > 2 * 60 * 1000) { // Si han pasado 2 min sin actividad
+        if (ahora - lastAccessed > 5 * 60 * 1000) { // Si han pasado 5 min sin actividad
             delete sesiones[sessionId];
         }
     }
@@ -87,31 +98,25 @@ app.get('/',(request,response)=>{
 
 //Endpoint para iniciar sesion
 app.post("/login", (request, response) => {
-    const { name,email, nickname, macAdress } = request.body;// Extrae las variables necesarias del cuerpo de la solicitud
-    if (!name|| !email || !nickname || !macAdress) {// Verifica que los campos requeridos estén presentes
-        return response.status(400).json({ message: "Missing required fields" });
+    const { email, nickname, macClient } = request.body;// Extrae las variables necesarias del cuerpo de la solicitud
+    if (!email || !nickname || !macClient) {// Verifica que los campos requeridos estén presentes
+        return response.status(400).json({ 
+            message: "Missing required fields" });
     }
 
-    // Formatea la fecha actual para mayor legibilidad
-    const formattedDate = new Intl.DateTimeFormat("es-ES", {
-        dateStyle: "full",
-        timeStyle: "medium",
-        timeZone: "UTC", // Puedes cambiar la zona horaria si es necesario
-    }).format(xicoTime);
-
     const sessionId = uuidv4(); // Generar un nuevo ID de sesión
+    const timestamp = Date.now();
     // Guarda la información de la sesión en el objeto "sesion"
     sesiones[sessionId] = {
         sessionId, // ID único de la sesión
-        name,
         email, // Correo electrónico del usuario
         nickname, // Apodo del usuario
-        macAdress, // Dirección MAC del usuario
+        macClient, // Dirección MAC del usuario
         ipClient: getClientIp(request), // IP del cliente
         ipServer: getServerIP(), // IP del servidor
         macServer: getServerMacAddress(), // MAC del servidor // IP del cliente que realiza la solicitud
-        dateCreated: formattedDate.toString(), // Guardamos el timestamp
-        lastAccessed: formattedDate.toString(), // Fecha del último acceso formateada
+        dateCreated: timestamp.toString(), // Guardamos el timestamp
+        lastAccessed: timestamp.toString(), // Fecha del último acceso formateada
     };
 
     // Responde con un mensaje de éxito y el ID de la sesión
@@ -128,12 +133,9 @@ app.post("/login", (request, response) => {
         }
     
         const sesion = sesiones[sessionId];
-
         const ahora = moment();
-        const ipClient = request.ip.replace(/^.*:/, ''); // Convierte "::ffff:127.0.0.1" a "127.0.0.1"
-
-        const dateCreated = moment(sesion.dateCreated.formattedDate);
-        const lastAccessed = moment(sesion.lastAccessed.formattedDate);
+        const dateCreated = moment(sesion.dateCreated);
+        const lastAccessed = moment(sesion.lastAccessed);
     
         const tiempoActivo = moment.duration(ahora.diff(dateCreated)).humanize();
         const tiempoInactividad = moment.duration(ahora.diff(lastAccessed)).humanize();
@@ -141,8 +143,7 @@ app.post("/login", (request, response) => {
         response.status(200).json({
             message: "Sesión activa",
             session: {
-                ...sesion,
-                ipClient,
+                ...sesiones,
                 tiempoActivo,
                 tiempoInactividad,
             }
@@ -163,6 +164,7 @@ app.post("/login", (request, response) => {
         })
         response.status(200).json({message:"Logout successeful"})
     })
+
     //endpoint actualizar la sesion// Update
     app.put("/update", (request, response) => {
         const { sessionId, email, nickname } = request.body;
@@ -171,8 +173,11 @@ app.post("/login", (request, response) => {
         }
         if (email) sesiones[sessionId].email = email;
         if (nickname) sesiones[sessionId].nickname = nickname;
-        sesiones[sessionId].lastAccessed.formattedDate;
-        response.status(200).json({ message: "Sesión actualizada", session: sesiones[sessionId] });
+        sesiones[sessionId].lastAccessed
+        response.status(200).json({ 
+            message: "Sesión actualizada", 
+            session: sesiones[sessionId]
+        });
     });
     
 });
@@ -190,9 +195,9 @@ app.get("/sessions", (request, response) => {
     // 🔹 Obtener todas las sesiones activas con formato correcto
     const sesionesFormateadas = Object.values(sesiones).map(sesion => ({
         ...sesion, // Copiamos los datos originales de la sesión
-        ipClient: sesion.ipClient || request.ip.replace(/^.*:/, ''), // Corregimos la IP del cliente si no está almacenada
-        tiempoActivo: moment.duration(ahora - moment(sesion.dateCreated, "dddd, D [de] MMMM [de] YYYY, HH:mm:ss")).humanize(),
-        tiempoInactividad: moment.duration(ahora - moment(sesion.lastAccessed, "dddd, D [de] MMMM [de] YYYY, HH:mm:ss")).humanize()
+         ipClient: sesion.ipClient || request.ip.replace(/^.*:/, ''), // Corregimos la IP del cliente si no está almacenada
+         tiempoActivo: moment.duration(ahora - moment(sesion.dateCreated, "dddd, D [de] MMMM [de] YYYY, HH:mm:ss")).humanize(),
+         tiempoInactividad: moment.duration(ahora - moment(sesion.lastAccessed, "dddd, D [de] MMMM [de] YYYY, HH:mm:ss")).humanize()
     }));
 
     response.status(200).json({
@@ -206,3 +211,9 @@ app.get("/sessions", (request, response) => {
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
+//aqui va la conexion de la base de datos a mongoDB
+
+mongoose.connect('mongodb+srv://Dulce:dul230493@cluster0.ql2zu.mongodb.net/API-AWI140-230493?retryWrites=true&w=majority&appName=Cluster0')
+.then((db)=>console.log('mongodb atlas conected'))
+.catch((error)=>console.error(error));
+//export default mongoose;
